@@ -1,11 +1,13 @@
 # Goal: Create a high-performance, dual-mode (RAG & Chatbot) AI application optimized for M1/M2/M3 Macs.
-# Key Features: Metal GPU acceleration (MPS), Caching, Dark Mode UI, Multilingual support.
+# Key Features: Metal GPU acceleration (MPS), Caching, Dark Mode UI, Multilingual support, and PERSISTENT HISTORY (SQLite).
 
 import streamlit as st
 import tempfile
 import os
 import time
 import torch
+import json
+import sqlite3  # New: For local, file-based persistence
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 from langchain_community.document_loaders import PyPDFLoader
@@ -14,13 +16,65 @@ from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import PromptTemplate
 from langchain_community.llms import Ollama
 
-# --- M1 Optimization Settings ---
-# Note: Ensure ollama pull mistral is run and the model is built with the Modelfile: ollama create mistral-metal-accel -f Mistral-Metal.Modelfile
+# --- Global Variables ---
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 LLM_MODEL = "mistral-metal-accel"
 
+# SQLite Persistence Setup
+DB_NAME = "chat_history.db"
+
+
+# --- SQLite Functions ---
+
+def init_db():
+    """Initializes the SQLite database and chat_log table if they don't exist."""
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    # Create table to store chat history, keyed by the application mode (RAG/CHAT)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS chat_log (
+            mode TEXT PRIMARY KEY,
+            history_json TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def save_history_sqlite(history, mode):
+    """Saves the current session state history to the SQLite database."""
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    history_json = json.dumps(history)
+    c.execute("""
+        INSERT OR REPLACE INTO chat_log (mode, history_json) 
+        VALUES (?, ?)
+    """, (mode, history_json))
+    conn.commit()
+    conn.close()
+
+
+def load_history_sqlite(mode):
+    """Loads chat history from the SQLite database if available."""
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("SELECT history_json FROM chat_log WHERE mode = ?", (mode,))
+    result = c.fetchone()
+    conn.close()
+
+    if result:
+        return json.loads(result[0])
+    return []
+
 
 # --- Core Functions ---
+
+@st.cache_resource
+def initialize_persistence():
+    """Initializes the SQLite persistence system."""
+    init_db()
+    st.sidebar.success("💾 **Persistence:** SQLite Ready.")
+
 
 @st.cache_resource
 def get_embedding_function():
@@ -32,7 +86,6 @@ def get_embedding_function():
         DEVICE = "cpu"
         st.sidebar.warning("⚠️ **Metal GPU NOT Detected:** Falling back to CPU for Vectorization.")
 
-    # Use HuggingFaceEmbeddings as it allows explicit device assignment via PyTorch
     model_kwargs = {'device': DEVICE}
     return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL, model_kwargs=model_kwargs)
 
@@ -49,7 +102,6 @@ def load_and_process_docs(uploaded_file):
         tmp_file_path = tmp_file.name
 
     try:
-        # 1. Load, Split, and Embed
         loader = PyPDFLoader(tmp_file_path)
         documents = loader.load()
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=700, chunk_overlap=150)
@@ -57,7 +109,6 @@ def load_and_process_docs(uploaded_file):
         embeddings = get_embedding_function()
         vectorstore = FAISS.from_documents(texts, embeddings)
 
-        # 2. Record Metrics
         end_time = time.time()
         process_time = round(end_time - start_time, 2)
         st.sidebar.metric(label="Vectorization Time (GPU)", value=f"{process_time} seconds")
@@ -67,12 +118,10 @@ def load_and_process_docs(uploaded_file):
         st.sidebar.error(f"Error processing document: {e}")
         return None
     finally:
-        # 3. Clean up the temporary file
         os.unlink(tmp_file_path)
 
 
 def run_rag_query(query, vectorstore):
-    """Performs RAG query (Retrieval + Generation)."""
     start_time = time.time()
 
     # 1. Retrieval
@@ -90,7 +139,6 @@ def run_rag_query(query, vectorstore):
         chain = rag_prompt | llm
         response = chain.invoke({"context": context, "query": query})
     except Exception:
-        # Simplified simulation to avoid errors with complex formatting
         response = f"**Simulated Response (Cannot Connect to Ollama):** Based on the retrieved context from pages {source_refs}, the model would have answered using the following information: {context[:500]}..."
 
     end_time = time.time()
@@ -99,14 +147,10 @@ def run_rag_query(query, vectorstore):
 
 
 def run_chat_query(prompt, chat_history):
-    """Performs simple conversational query with memory."""
     start_time = time.time()
 
-    # Structure history for the LLM prompt
-    # Limit history to the last 5 turns to save VRAM and speed up processing
     history_text = "\n".join([f"{msg['role'].capitalize()}: {msg['content']}" for msg in chat_history[-5:]])
 
-    # Simple Chat Prompt
     chat_prompt = PromptTemplate.from_template(
         "You are a helpful and engaging general-purpose assistant named Gemini. Respond to the user's last question based on the full conversation history. **Respond entirely in the language of the user's question.**\n\nHistory: {history}\n\nUser Question: {prompt}"
     )
@@ -124,10 +168,9 @@ def run_chat_query(prompt, chat_history):
 
 
 # --- Streamlit UI Setup ---
-
 st.set_page_config(page_title="Document Q&A Bot", layout="wide", initial_sidebar_state="expanded")
 
-# Custom CSS for Modern Dark Mode
+# Custom CSS for Modern Dark Mode (CSS remains the same)
 st.markdown("""
     <style>
     :root {
@@ -184,18 +227,19 @@ st.markdown("""
 
 # --- Application Logic ---
 
-st.title("🤖 Local AI Assistant")
+st.title("🤖 Local AI Assistant ")
 st.caption("Dual-Mode: Conversational Chatbot or Private Document Q&A (RAG).")
 
-# Sidebar Configuration and Mode Switch
+# 1. Initialize SQLite Persistence
+initialize_persistence()
+
+# 2. Sidebar Configuration and Mode Switch
 with st.sidebar:
     st.header("⚙️ Configuration")
 
-    # --- Mode Switch (Core UI Feature) ---
     MODE = st.radio("Select Application Mode:", ("Document Q&A (RAG)", "Local Chatbot"), index=0, key="mode")
     st.markdown("---")
 
-    # Conditional UI for RAG Mode
     uploaded_file = None
     vector_db = None
 
@@ -203,43 +247,40 @@ with st.sidebar:
         st.subheader("📚 RAG Setup")
         uploaded_file = st.file_uploader("Upload a PDF for Analysis", type="pdf")
 
-    # Display performance metrics (populated inside run_query)
     st.subheader("📈 Performance Metrics")
     st.metric(label="Vectorization Time", value="N/A")
     st.metric(label="Query Time", value="N/A")
 
-# --- Main Application Area ---
-
-# Initialize messages and set dynamic welcome message
+# 3. Initialize Messages (Load from SQLite or set default)
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Use a separate flag to ensure the welcome message only appears once when the mode changes
-# This logic is what prevents chat history persistence, so we need to adjust it.
-if "welcome_sent" not in st.session_state or st.session_state.get("last_mode") != MODE:
-    # We must clear history only if the mode explicitly changed, not on every app run.
-    if st.session_state.get("last_mode") != MODE:
-        st.session_state.messages = []
+# Logic to load history and set initial message when mode changes
+if st.session_state.get("last_mode") != MODE:
+    # Attempt to load history for the new mode
+    loaded_history = load_history_sqlite(MODE)
 
-        # Set welcome message only if history is empty
-    if not st.session_state.messages:
+    if loaded_history:
+        st.session_state.messages = loaded_history
+    else:
+        # Set new welcome message only if no history was loaded
+        st.session_state.messages = []
         if MODE == "Document Q&A (RAG)":
             welcome_message = "Welcome! Upload a PDF in the sidebar to begin private Q&A."
-        else:  # Local Chatbot
+        else:
             welcome_message = "Hello! I'm your local AI assistant. Ask me anything."
-
         st.session_state.messages.append({"role": "assistant", "content": welcome_message})
 
-    st.session_state.welcome_sent = True
     st.session_state.last_mode = MODE  # Track the current mode
 
+# 4. Display Messages
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# 3. Handle User Input
+# 5. Handle User Input
 if prompt := st.chat_input("What's your question?"):
-    # Fix: User's prompt must be added to history before running the model
+    # Add user query to history and display immediately
     user_query_message = {"role": "user", "content": prompt}
     st.session_state.messages.append(user_query_message)
 
@@ -247,50 +288,43 @@ if prompt := st.chat_input("What's your question?"):
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Determine which logic to run based on the mode
-    if MODE == "Document Q&A (RAG)" and uploaded_file:
-        # 1. Load Document (will use cache if file is the same)
-        vector_db = load_and_process_docs(uploaded_file)
+    # Placeholder for the assistant's response to fill in the chat box
+    with st.chat_message("assistant"):
+        # Determine which logic to run based on the mode
+        if MODE == "Document Q&A (RAG)" and uploaded_file:
+            # RAG Mode Execution
+            vector_db = load_and_process_docs(uploaded_file)
 
-        if vector_db:
-            # --- RAG Mode Execution ---
-            with st.chat_message("assistant"):
+            if vector_db:
                 with st.spinner("🧠 Thinking... (RAG Search and Generation)"):
                     answer, sources, query_time = run_rag_query(prompt, vector_db)
                     full_response = f"**Answer:** {answer}\n\n**Source Pages:** {sources}"
                     st.markdown(full_response)
 
-            # Update metrics and session state
-            st.sidebar.metric(label="Vectorization Time", value=st.session_state.get("VectorizationTime", "Cached"))
-            st.sidebar.metric(label="Query Time", value=f"{query_time} seconds")
-            st.session_state.messages.append(
-                {"role": "assistant", "content": full_response})  # Add assistant response to history
-
-        else:
-            # Handle document processing error
-            with st.chat_message("assistant"):
+                st.sidebar.metric(label="Vectorization Time", value=st.session_state.get("VectorizationTime", "Cached"))
+                st.sidebar.metric(label="Query Time", value=f"{query_time} seconds")
+                st.session_state.messages.append({"role": "assistant", "content": full_response})
+            else:
                 error_response = "⚠️ **Error:** Document processing failed. Please check the sidebar for details."
                 st.markdown(error_response)
                 st.session_state.messages.append({"role": "assistant", "content": error_response})
 
-
-    elif MODE == "Local Chatbot":
-        # --- Chatbot Mode Execution ---
-        chat_history = st.session_state.messages
-        with st.chat_message("assistant"):
+        elif MODE == "Local Chatbot":
+            # Chatbot Mode Execution
+            chat_history = st.session_state.messages
             with st.spinner("🧠 Thinking... (Conversational Generation)"):
                 answer, _, query_time = run_chat_query(prompt, chat_history)
                 st.markdown(answer)
 
-        # Update metrics and session state
-        st.sidebar.metric(label="Vectorization Time", value="N/A")
-        st.sidebar.metric(label="Query Time", value=f"{query_time} seconds")
-        st.session_state.messages.append({"role": "assistant", "content": answer})  # Add assistant response to history
+            st.sidebar.metric(label="Vectorization Time", value="N/A")
+            st.sidebar.metric(label="Query Time", value=f"{query_time} seconds")
+            st.session_state.messages.append({"role": "assistant", "content": answer})
 
-    else:
-        # Waiting state for RAG mode without file
-        with st.chat_message("assistant"):
+        else:
+            # Waiting state for RAG mode without file
             waiting_message = "Please upload a document in the sidebar to start Q&A."
             st.markdown(waiting_message)
-            st.session_state.messages.append(
-                {"role": "assistant", "content": waiting_message})  # Add waiting message to history
+            st.session_state.messages.append({"role": "assistant", "content": waiting_message})
+
+        # 6. Save History (Crucial for Persistence)
+save_history_sqlite(st.session_state.messages, MODE)
