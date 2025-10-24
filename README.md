@@ -1,91 +1,112 @@
-🤖 Dual-Mode AI Assistant: M1-Optimized RAG and Local Chatbot
-This project showcases a production-ready, highly efficient Dual-Mode AI Application built for private document analysis and general conversational support. It is specifically optimized to run locally on Apple Silicon (M1/M2/M3) devices, proving resourcefulness and MLOps capability on constrained hardware.
+💬 Mistral RAG Chatbot: Context-Aware Conversational AI
 
-🌟 Technical Highlights (The Value Proposition)
-This application is engineered to eliminate reliance on expensive cloud APIs and maximize local performance.
+Project Overview
 
-Feature
+This repository hosts a powerful, context-aware chatbot implemented using the Retrieval-Augmented Generation (RAG) framework and the advanced Mistral Large Language Model (LLM).
 
-Technologies Demonstrated
+The RAG architecture allows the chatbot to retrieve information from a private, designated knowledge base (e.g., PDFs, documentation, notes) and use it to ground its responses. This significantly reduces hallucinations and ensures answers are precise, factual, and relevant to the provided corpus.
 
-MLOps Skill
+Why Mistral and RAG?
 
-End-to-End Metal Acceleration
+Mistral LLM: Leveraged for its high performance, speed, and capability in complex reasoning tasks.
 
-PyTorch (MPS) & Ollama (Mistral)
+RAG Architecture: Overcomes the limitation of pre-trained models by accessing proprietary or specialized knowledge, making the chatbot highly practical for enterprise or specific domain use.
 
-Proven expertise in optimizing models for specialized, cost-effective hardware (M1 GPU).
+✨ Key Features
 
-Efficient Caching
+Knowledge Grounding: Chatbot responses are directly linked to documents in the knowledge base, ensuring factual accuracy.
 
-@st.cache_resource & File Hashing
+Vectorized Search: Utilizes high-speed vector indexing and similarity search for instantaneous retrieval of relevant document chunks.
 
-Builds responsive applications by preventing repetitive, costly document embedding (vectorization).
+Custom Context: Easily update the chatbot's knowledge by adding new documents (PDFs, TXT, MD) to the source directory.
 
-Persistent Memory
+Intuitive Interface: A simple Python-based interface (e.g., CLI or Streamlit/Flask app) for seamless interaction.
 
-SQLite (Local Database)
+Scalable: The RAG pipeline is modular, allowing for easy swapping of LLMs, embedding models, or vector stores.
 
-Implementation of reliable, file-based persistence for chat history across sessions.
+🛠️ Technology Stack
 
-Dual-Mode Architecture
+Component
 
-Streamlit Session State Management
+Technology
 
-Demonstrates ability to build complex applications with flexible functionality (RAG vs. Conversational).
+Role
 
-Data Privacy
+LLM
 
-Local-Only LLM Inference
+Mistral
 
-Guarantees sensitive client data never leaves the user's local machine.
+The core generative model.
 
-⚠️ Critical Setup: Local LLM Server (Ollama)
-This application relies entirely on the Ollama application and a local model. You must complete this setup for the application to function beyond the "Simulated Response."
+Framework
 
-1. Ollama Installation
-Download: Install the Ollama application from their official website and launch it once to start the local server.
+LlamaIndex / LangChain (Inferred)
 
-Model Download: Pull the base Mistral model to your Ollama library:
+Orchestration of the RAG pipeline (loading, indexing, querying).
 
-ollama pull mistral
+Embedding
 
-2. GPU Acceleration Configuration
-The rag_app.py is configured to use a GPU-optimized version named mistral-metal-accel. To build this accelerated version using your M1's GPU, follow these steps in your Mac Terminal:
+Sentence Transformers (or similar)
 
-Step A: Create the Custom Modelfile
-Create a new file named Mistral-Metal.Modelfile and ensure it contains exactly these two lines:
+Converts text chunks into searchable vector embeddings.
 
-FROM mistral
-PARAMETER num_gpu 99
+Vector Database
 
-Step B: Build the Accelerated Model
-Run the ollama create command to build the GPU-accelerated version:
+FAISS / Chroma (Inferred)
 
-ollama create mistral-metal-accel -f Mistral-Metal.Modelfile
+Stores and indexes the document embeddings for fast retrieval.
 
-Once this succeeds, the model is ready to run with maximum performance.
+Language
 
-🗂️ Dependencies (requirements.txt)
-You must install these packages in your Python Virtual Environment (venv):
+Python
 
-streamlit
-pandas
-numpy
-torch
-transformers
-sentence-transformers
-pypdf
-langchain-core
-langchain-community
-faiss-cpu
-sqlite3
+Core development language.
 
-🚀 Quick Start
-Setup: Install dependencies using pip install -r requirements.txt.
+🚀 Getting Started
 
-Run App:
+Follow these steps to set up and run the RAG Chatbot locally.
 
-streamlit run rag_app.py
+1. Prerequisites
 
-Test Modes: Use the sidebar to switch between the fast, conversational "Local Chatbot" and the document-specific "Document Q&A (RAG)" modes.
+Ensure you have Python 3.9+ installed and a working API key for accessing the Mistral LLM.
+
+# Clone the repository
+git clone [https://github.com/FavianRajendra/Mistral-Chatbot-RAG.git](https://github.com/FavianRajendra/Mistral-Chatbot-RAG.git)
+cd Mistral-Chatbot-RAG
+
+
+2. Installation
+
+Install all required dependencies.
+
+# Assuming you have a requirements.txt file
+pip install -r requirements.txt
+
+# Or install key dependencies manually:
+# pip install llama-index mistralai python-dotenv
+
+
+3. Configure API Key
+
+Create a .env file in the root directory of the project and add your Mistral API key:
+
+MISTRAL_API_KEY="YOUR_MISTRAL_API_KEY_HERE"
+
+
+4. Index the Knowledge Base
+
+You must first process your documents and build the vector index.
+
+Place your documents (e.g., doc1.pdf, guide.txt) into the knowledge_base/ directory.
+
+Run the indexing script (name inferred):
+
+python index_documents.py
+# This script converts documents into chunks and saves them as vectors in the local store.
+
+
+5. Run the Chatbot
+
+Start the main application script (name inferred):
+
+python app.py
