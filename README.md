@@ -1,102 +1,64 @@
-🤖 Local AI Assistant: Dual-Mode RAG & Chatbot (M-series Optimized)
+# 🍎 Mac-Optimized AI Assistant (RAG & Chatbot)
 
-This project is a high-performance, dual-mode AI application built with Streamlit, LangChain, and Ollama, specifically optimized for Apple Silicon (M1/M2/M3) Macs. It offers both a private Document Q&A (RAG) mode and a general-purpose Local Chatbot mode.
+This Python application is a high-performance, dual-mode AI assistant built with **Streamlit** and **LangChain**. It is specifically optimized for Apple Silicon (M1, M2, M3) using **Metal Performance Shaders (MPS)** to accelerate vectorization and model inference via **Ollama**.
 
-It is designed to showcase the power of on-device processing by utilizing Metal Performance Shaders (MPS) for hardware acceleration on both the vectorization and LLM generation steps.
+## ✨ Key Features
 
-✨ Key Features
+* **Dual-Mode Functionality:** Seamlessly switch between **Document Q&A (RAG)** and a **Local Conversational Chatbot**.
+* **Apple Silicon Optimization:** Leverages the **Metal GPU (MPS)** for lightning-fast embeddings and model execution, significantly reducing latency compared to CPU-only solutions.
+* **Built-in Caching:** Uses Streamlit's `@st.cache_resource` for efficient re-runs, minimizing document re-processing time.
+* **Modern UI:** Features a sleek, custom **Dark Mode** user interface with Streamlit.
+* **Multilingual Support:** The RAG prompt instructs the model to respond in the language of the user's question.
 
-Apple Silicon Optimization (MPS): Explicitly targets the Metal GPU for faster embedding (vectorization) and LLM inference, dramatically reducing query latency.
+## 🛠️ Prerequisites
 
-Dual Mode Functionality: Seamlessly switch between Document Q&A (RAG) for private file analysis and a general Local Chatbot.
+This application requires **Ollama** to be running locally with a specific Metal-accelerated model.
 
-Caching for Performance: Uses @st.cache_resource to ensure documents are only processed once per session, even with application reruns.
+1.  **Install Ollama:**
+    ```bash
+    # Install the Ollama application from ollama.com
+    ```
+2.  **Install Dependencies:**
+    ```bash
+    pip install streamlit langchain-community langchain-core ollama pypdf faiss-cpu torch
+    ```
+    *Note: `torch` will automatically utilize MPS on Apple Silicon.*
+3.  **Download Base Model:**
+    ```bash
+    ollama pull mistral
+    ```
+4.  **Create Metal-Accelerated Model:**
+    The Python file expects a model named `mistral-metal-accel`. This requires a custom `Modelfile` to explicitly enable the GPU on Ollama.
 
-Modern Dark Mode UI: Custom CSS provides a clean, professional, and eye-friendly dark mode interface.
+    * Create a file named `Mistral-Metal.Modelfile`:
+        ```
+        FROM mistral
+        PARAMETER num_gpu 99 # Tells Ollama to use the maximum available GPU layers (MPS)
+        ```
+    * Create the custom model (replace `mistral-metal-accel` if needed):
+        ```bash
+        ollama create mistral-metal-accel -f Mistral-Metal.Modelfile
+        ```
 
-Multilingual Ready: Prompts are structured to ensure the model responds entirely in the language of the user's question.
+## 🚀 How to Run
 
-Clear Metrics: Real-time feedback on vectorization and query times are displayed in the sidebar.
+1.  **Ensure Ollama is running** in the background.
+2.  **Execute the Streamlit application:**
+    ```bash
+    streamlit run your_file_name.py
+    ```
+    (Replace `your_file_name.py` with the actual file name).
+3.  The application will open in your web browser.
 
-🛠️ Prerequisites
+## ⚙️ Configuration Notes
 
-To run this application, you must have the following installed:
+| Parameter | Value | Description |
+| :--- | :--- | :--- |
+| `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | A fast, efficient model for vectorizing text. |
+| `LLM_MODEL` | `mistral-metal-accel` | The locally running Ollama model, specifically configured for MPS. |
+| **RAG Mode** | PDF Upload Required | Processes the uploaded PDF to create a FAISS vector database in-memory for private Q&A. |
+| **Chatbot Mode** | No Upload Needed | Engages in a general conversation using the local LLM. |
 
-Ollama: The easiest way to run local LLMs with Metal acceleration.
+***
 
-Mistral LLM (Optimized): A specific version of the Mistral model created to maximize Metal acceleration.
-
-Python Environment: Python 3.9+ is recommended.
-
-1. Ollama Setup
-
-First, download and install Ollama for macOS.
-
-Next, you need to pull the base model and then create the optimized version used in the code (mistral-metal-accel).
-
-Pull the base Mistral model:
-
-ollama pull mistral
-
-
-Create a Mistral-Metal.Modelfile (This file tells Ollama to load the model with specific optimizations):
-
-FROM mistral
-PARAMETER num_gpu 999
-
-
-Note: num_gpu 999 forces Ollama to use the maximum available GPU layers, ensuring Metal acceleration is fully utilized.
-
-Create the optimized model in Ollama:
-
-ollama create mistral-metal-accel -f Mistral-Metal.Modelfile
-
-
-This creates the specific model named mistral-metal-accel that the Streamlit app is configured to use.
-
-2. Python Dependencies
-
-Install the necessary Python packages.
-
-# It is highly recommended to use a virtual environment
-pip install streamlit langchain-community langchain-core pypdf transformers faiss-cpu torch
-
-
-🚀 How to Run the Application
-
-Save the Code: Save the Python code above as app.py.
-
-Start Ollama: Ensure the Ollama server is running in the background.
-
-Start the Streamlit App:
-
-streamlit run app.py
-
-
-The application will open automatically in your browser.
-
-⚙️ Core Technical Implementation Details
-
-Metal Acceleration (MPS)
-
-The code explicitly checks for and utilizes the PyTorch MPS backend for hardware acceleration:
-
-# In get_embedding_function()
-if torch.backends.mps.is_available():
-    DEVICE = "mps"
-    # ...
-model_kwargs = {'device': DEVICE}
-return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL, model_kwargs=model_kwargs)
-
-
-RAG Flow
-
-Loading: User uploads a PDF.
-
-Caching: The load_and_process_docs function, decorated with @st.cache_resource, ensures the expensive vectorization step is only run once per uploaded file. The unique file_id acts as the cache key.
-
-Embedding: Documents are split using RecursiveCharacterTextSplitter and embedded using the MPS-accelerated HuggingFaceEmbeddings (using all-MiniLM-L6-v2).
-
-Retrieval: FAISS.similarity_search finds the most relevant document chunks.
-
-Generation: The relevant context and user question are passed to the locally running Ollama Mistral model via a tailored PromptTemplate.
+_**Disclaimer:** The application assumes a correctly configured Ollama environment. If the model is not found or Ollama is not running, simulated responses will be displayed._
